@@ -6,4 +6,4 @@
 3. Выполнить команды для сборки
 - <code>cmake ../</code>
 - <code>make </code>
-4. Запустить программу <code>Horizon_v1 @input</code> или <code>Horizon_v2 @input</code>
+4. Запустить программу <code>./Horizon_v1 @input</code> или <code>./Horizon_v2 @input</code>
