@@ -17,7 +17,9 @@ public:
 
 private:
 	int detect(string input);
-	Vec3f getMu(int n, Mat mat);
+	Vec3f getMu(int y, int n, Mat mat);
+	Mat getCov(int sPos, int n, Mat mat);
+	int getHorizon(Mat mat);
 };
 
 #endif
