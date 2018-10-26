@@ -13,13 +13,13 @@ using namespace cv;
 class horizon
 {
 public:
-	horizon(string in);
+	horizon(string in, int n, int rs, int pos);
 
 private:
-	int detect(string input);
-	Vec3f getMu(int y, int n, Mat mat);
-	Mat getCov(int sPos, int n, Mat mat);
-	int getHorizon(Mat mat);
+	int detect(string input, int n, int rs, int pos);
+	Vec3f getMu(int n, vector<Vec3f> x);
+	Mat getCov(int n, vector<Vec3f> x);
+	int getHorizon(int n, Mat mat);
 };
 
 #endif

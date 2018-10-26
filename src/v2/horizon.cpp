@@ -1,8 +1,8 @@
 #include "horizon.h"
 
-horizon::horizon(string in)
+horizon::horizon(string in, int n, int rs, int pos)
 {
-	int error = detect(in);
+	int error = detect(in, n, rs, pos);
 
 	if (error == -1)
 	{
@@ -10,11 +10,9 @@ horizon::horizon(string in)
 	}
 }
 
-int horizon::detect(string in)
+int horizon::detect(string in, int n, int rs, int pos)
 {
-	double mu = 0;
-
-	Mat frame, gray, edge;
+	Mat frame;
 	VideoCapture cap;
 
 	cap.open(in);
@@ -28,22 +26,22 @@ int horizon::detect(string in)
     int height = (int) cap.get(4);
 	int speed = 1000 / fps;
 
+	cap.set(CAP_PROP_POS_FRAMES, pos);
 	while(waitKey(speed) != 27)
 	{
 		cap.read(frame);
 		if (frame.empty())
 			break;
 
-		Mat rSize;
-		resize(frame, rSize, Size(width/10,height/10));
+		Mat rSize, gray;
+		resize(frame, rSize, Size(width/rs,height/rs));
 		GaussianBlur(rSize, rSize, Size(3, 3), 5);
 
-		int h = getHorizon(rSize);
+		int h = getHorizon(n, rSize);
 
-		line(frame, Point(0,h*10), Point(frame.cols,h*10),Scalar(0,0,255));
+		line(frame, Point(0,h*rs), Point(frame.cols,h*rs),Scalar(0,0,255), 1);
 
 		imshow("File: " + in + " View", frame);
-		// imshow("File: " + in + " View", rSize);
 	}
 	
 	return 0;
@@ -52,48 +50,54 @@ int horizon::detect(string in)
 /**
  * @brief Функция получения мат. ожидания (Мю)
  * 
- * @param y Строка для которой получаем
- * @param n Количество столбцов
- * @param mat Матрица изображения
+ * @param n Количество пикселей в блоке
+ * @param x Вектор пикселей
  * 
  * @return Вектор мат. ожидания по цветам
  */
-Vec3f horizon::getMu(int y, int n, Mat mat)
+Vec3f horizon::getMu(int n, vector<Vec3f> x)
 {
 	Vec3f mu = {(float)1/n, (float)1/n, (float)1/n};
 	Vec3f s = 0;
-	for (int x = 0; x < n;  x++)
-	{
-		// cout << "mat " << mat.at<Vec3b>(x,y) << " x = " << x << " y = " << y << " s = " << s << endl;
-		s += mat.at<Vec3b>(x,y);
-	}
+	for (int i = 0; i < n;  i++)
+		s += x[i];
 
 	mu[0] = mu[0] * s[0];
 	mu[1] = mu[1] * s[1];
 	mu[2] = mu[2] * s[2];
+
 	return mu;
 }
 
 /**
  * @brief Функция получения ковариционной матрицы
  * 
- * @param sPos Позиция начала матрицы Неба или Земли
- * @param n Количество строк
- * @param mat Матрица изображения
+ * @param n Количество пикселей в блоке
+ * @param x Вектор пикселей
  * 
  * @return Ковариционная матрица
  */
-Mat horizon::getCov(int sPos, int n, Mat mat)
+Mat horizon::getCov(int n, vector<Vec3f> x)
 {
 	Mat cov;
-	for (int x = 0; x < n; x++)
+	for (int i = 0; i * n < x.size(); i++)
 	{
-		int y = x + sPos;
-		Vec3f mu = getMu(y, mat.cols, mat);
-		Mat xMu = (Mat)((Vec3f)mat.at<Vec3b>(x,y) - mu);
-		Mat xMuT;
-		transpose(xMu, xMuT);
-		cov = cov + xMu*xMuT;
+		int pos = i * n;
+		vector<Vec3f> tX;
+		if (pos + n < x.size())
+			tX.assign(x.begin()+pos, x.begin()+pos+n);
+		else
+			tX.assign(x.begin()+pos, x.end());
+
+		Vec3f mu = getMu(n, tX);	
+
+		for (int j = pos; j < n && j < x.size(); j++)
+		{
+			Mat xMu = (Mat)x[j] - mu;
+			Mat xMuT;
+			transpose(xMu, xMuT);
+			cov = cov + xMu*xMuT;
+		}
 	}
 
 	return (float)1/(n-1) * cov;
@@ -102,25 +106,45 @@ Mat horizon::getCov(int sPos, int n, Mat mat)
 /**
  * @brief Получение строки с горизонтом
  * 
+ * @param n Количество пикселей в блоке
  * @param mat Матрица изображения
+ * 
  * @return Высоту горизонта
  */
-int horizon::getHorizon(Mat mat)
+int horizon::getHorizon(int n, Mat mat)
 {
-	double j = 0;
+	double j;
 	int h = 0;
-	int offset = 2;
-	for (int y = 0 + offset; y < mat.rows-offset; y++)
+	for (int i = 10; i < mat.rows-10; i++)
 	{
-		Mat covS = getCov(0, y, mat);
-		Mat covG = getCov(y, mat.rows - y, mat);
-
-		double tJ = 1 / (determinant(covS) + determinant(covG));
-
-		if (tJ > j)
+		// Заполняем вектора неба и земли
+		vector<Vec3f> xS;
+		vector<Vec3f> xG;
+		for (int y = 0; y < mat.rows; y++)
 		{
-			j = tJ;
-			h = y;
+			for (int x = 0; x < mat.cols; x++)
+			{
+				if (y <= i)
+					xS.push_back(mat.at<Vec3b>(Point(x,y)));
+				else
+					xG.push_back(mat.at<Vec3b>(Point(x,y)));
+			}
+		}
+
+		Mat covS = getCov(n, xS);
+		Mat covG = getCov(n, xG);
+		
+		double detS = determinant(covS);
+		double detG = determinant(covG);
+		// Условие связанное что угрублением решения при доработки до полного ситуация будет исчерпана
+		if (detS != 0 && detG != 0)
+		{
+			double tJ = 1 / detS + detG;
+			if (tJ > j)
+			{
+				j = tJ;
+				h = i;
+			}
 		}
 	}
 
