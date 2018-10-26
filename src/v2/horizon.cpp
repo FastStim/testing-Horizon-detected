@@ -115,7 +115,7 @@ int horizon::getHorizon(int n, Mat mat)
 {
 	double j;
 	int h = 0;
-	for (int i = 10; i < mat.rows-10; i++)
+	for (int i = 12; i < mat.rows-12; i++)
 	{
 		// Заполняем вектора неба и земли
 		vector<Vec3f> xS;
